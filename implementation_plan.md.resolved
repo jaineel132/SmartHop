@@ -1,0 +1,397 @@
+# MySmartHop — PRD, Architecture & Development Plan
+
+## 1. Product Overview
+
+**MySmartHop** is an AI-powered ride-sharing platform for a hackathon demo. It features two user roles (Public rider priority, Driver secondary), ML-based ride clustering, dynamic fare prediction, and intelligent driver ranking — all backed by Supabase realtime infrastructure.
+
+### 1.1 Problem Statement
+Traditional ride-hailing apps treat every ride as isolated. MySmartHop groups nearby riders heading in similar directions, predicts optimized fares, and ranks drivers intelligently — reducing cost and wait time.
+
+### 1.2 Success Metrics (Hackathon)
+- Working end-to-end ride flow (request → accept → complete → rate)
+- ML models visibly influencing the product (clustering, fares, driver ranking)
+- Realtime updates between rider and driver
+- Clean, modern UI that impresses judges
+
+---
+
+## 2. User Review Required
+
+> [!IMPORTANT]
+> **Supabase Project**: You need a Supabase project. Do you already have one, or should we set one up during Phase 1? I need the project URL and anon key.
+
+> [!IMPORTANT]
+> **Map Provider**: The plan uses **Leaflet.js with OpenStreetMap** (completely free, no API key needed) instead of Google Maps/Mapbox. This is ideal for a hackathon — zero cost, fast setup, and looks professional. Do you agree, or do you prefer Mapbox/Google Maps?
+
+> [!IMPORTANT]
+> **ML Service Strategy**: For a hackathon, I recommend embedding the ML models **directly as Next.js API routes** using a lightweight Python subprocess or pre-computed results stored in Supabase — instead of a separate FastAPI service. This eliminates deployment complexity. If you want the full FastAPI setup for demonstration/architecture points, we can keep it. What's your preference?
+
+> [!WARNING]
+> **TailwindCSS Version**: You requested TailwindCSS. I'll use **TailwindCSS v4** (latest) with shadcn/ui. Confirm this works for you.
+
+---
+
+## 3. Finalized Tech Stack
+
+| Layer | Technology | Reason |
+|---|---|---|
+| **Framework** | Next.js 15 (App Router) | SSR, API routes, modern React |
+| **Language** | TypeScript | Type safety, better DX |
+| **Styling** | TailwindCSS v4 + shadcn/ui | Rapid, beautiful components |
+| **Animations** | Framer Motion | Smooth, professional transitions |
+| **Database** | Supabase (PostgreSQL + PostGIS) | Auth, DB, Realtime in one |
+| **Auth** | Supabase Auth (Email/OTP) | Built-in, role-based |
+| **Realtime** | Supabase Realtime | WebSocket ride status updates |
+| **Maps** | Leaflet.js + OpenStreetMap | Free, no API key, great UX |
+| **ML Service** | FastAPI (Python) | Model serving endpoints |
+| **ML Libraries** | scikit-learn, pandas, numpy | Clustering, regression, ranking |
+| **Model Persistence** | joblib | Save/load trained models |
+| **Charts** | Recharts | ML metrics visualization |
+
+---
+
+## 4. System Architecture
+
+```mermaid
+graph TD
+    subgraph Frontend["Next.js Frontend"]
+        LP[Landing Page]
+        AUTH[Auth Pages]
+        PD[Public Dashboard]
+        DD[Driver Dashboard]
+        RS[Ride Status Page]
+        AN[Analytics Dashboard]
+    end
+
+    subgraph Backend["Next.js API Routes"]
+        AR[Auth Routes]
+        RR[Ride Routes]
+        DR[Driver Routes]
+        MLR[ML Proxy Routes]
+    end
+
+    subgraph ML["FastAPI ML Service"]
+        CL["/cluster — KMeans/DBSCAN"]
+        FP["/predict-fare — Regression"]
+        RD["/rank-driver — Scoring"]
+    end
+
+    subgraph Supabase["Supabase"]
+        SB_AUTH[Supabase Auth]
+        SB_DB[(PostgreSQL + PostGIS)]
+        SB_RT[Realtime Subscriptions]
+    end
+
+    Frontend -->|API Calls| Backend
+    Backend -->|Auth| SB_AUTH
+    Backend -->|CRUD| SB_DB
+    Backend -->|ML Inference| ML
+    ML -->|Store Results| SB_DB
+    SB_RT -->|WebSocket| Frontend
+    SB_DB -->|Triggers| SB_RT
+```
+
+---
+
+## 5. Database Schema Design
+
+### Tables
+
+| Table | Key Columns | Purpose |
+|---|---|---|
+| `profiles` | id (uuid, FK→auth.users), name, phone, role (enum), avatar_url, created_at | User profiles for both roles |
+| `drivers` | id, user_id (FK), vehicle_type, license_plate, is_available, rating, total_rides, acceptance_rate | Driver-specific data |
+| `rides` | id, rider_id (FK), driver_id (FK), pickup_location (geography), drop_location (geography), pickup_address, drop_address, status (enum), fare, predicted_fare, cluster_id, distance_km, duration_min, created_at | Core ride records |
+| `ratings` | id, ride_id (FK), from_user_id, to_user_id, score (1-5), comment, created_at | Post-ride ratings |
+| `cluster_results` | id, ride_id (FK), cluster_id, algorithm, silhouette_score, created_at | ML clustering output |
+| `fare_predictions` | id, ride_id (FK), predicted_solo_fare, predicted_shared_fare, savings_pct, model_used, created_at | ML fare predictions |
+| `driver_locations` | id, driver_id (FK), location (geography), updated_at | Live GPS tracking |
+
+### Enums
+- `user_role`: `rider`, `driver`
+- `ride_status`: `requested`, `accepted`, `ongoing`, `completed`, `cancelled`
+- `vehicle_type`: `car`, `bike`, `auto`
+
+---
+
+## 6. ML Architecture
+
+### Model Pipeline
+
+```
+Synthetic Data → Preprocessing → Train Models → Save (joblib) → FastAPI loads → Inference endpoints
+```
+
+### 6.1 Clustering (Core Intelligence)
+- **KMeans**: Fixed cluster count — baseline
+- **DBSCAN**: Density-based — better for geo-clustering
+- **Features**: lat, lng, time, ride preference
+- **Metric**: Silhouette score comparison
+- **Output**: Cluster ID + efficiency score
+
+### 6.2 Fare Prediction (Regression)
+- **Linear Regression**: Baseline
+- **Random Forest**: Higher accuracy
+- **Features**: distance, duration, cluster_size, demand_level, time_of_day
+- **Metrics**: MAE, RMSE, R²
+- **Output**: Solo fare, shared fare, savings %
+
+### 6.3 Driver Ranking
+- **Weighted Scoring**: distance × 0.4 + rating × 0.3 + acceptance_rate × 0.3
+- **Logistic Regression**: Predict acceptance probability
+- **Output**: Ranked driver list with scores
+
+### 6.4 Anomaly Detection (Bonus)
+- **Isolation Forest**: Flag suspicious patterns
+- **Features**: cancellation rate, route anomalies, booking frequency
+
+---
+
+## 7. Page & Component Mapping
+
+### 7.1 Pages
+
+| Page | Route | Key Components | Priority |
+|---|---|---|---|
+| **Landing** | `/` | Hero, Features, HowItWorks, CTA | P0 |
+| **Login** | `/login` | LoginForm, SocialAuth, RoleSelector | P0 |
+| **Register** | `/register` | RegisterForm, RoleSelector, OTP | P0 |
+| **Rider Dashboard** | `/dashboard` | RideRequestCard, ActiveRideCard, MapView, RideHistory | P0 |
+| **Driver Dashboard** | `/driver` | IncomingRequests, ActiveRide, ToggleAvailability, EarningsCard | P0 |
+| **Ride Tracking** | `/ride/[id]` | LiveMap, StatusTimeline, DriverInfo, FareBreakdown | P0 |
+| **Rating** | `/ride/[id]/rate` | StarRating, FeedbackForm | P1 |
+| **Analytics** | `/analytics` | ClusterViz, FareChart, ModelMetrics, DriverPerformance | P1 |
+| **Driver Onboarding** | `/driver/onboard` | VehicleForm, DocumentUpload | P2 |
+
+### 7.2 Shared Components
+
+| Component | Used In | Description |
+|---|---|---|
+| `MapView` | Dashboard, Tracking | Leaflet map with markers/routes |
+| `RideStatusBadge` | Dashboard, Tracking | Colored status indicator |
+| `LoadingSkeleton` | All pages | shimmer loading states |
+| `Navbar` | All pages | Role-aware navigation |
+| `RatingStars` | Rating, History | Interactive star component |
+| `FareCard` | Dashboard, Tracking | Solo vs shared fare display |
+| `MetricCard` | Analytics | Single metric with trend |
+
+---
+
+## 8. Folder Structure
+
+```
+MySmartHop/
+├── src/
+│   ├── app/                    # Next.js App Router
+│   │   ├── (auth)/
+│   │   │   ├── login/page.tsx
+│   │   │   └── register/page.tsx
+│   │   ├── (main)/
+│   │   │   ├── dashboard/page.tsx        # Rider dashboard
+│   │   │   ├── driver/page.tsx           # Driver dashboard
+│   │   │   ├── driver/onboard/page.tsx
+│   │   │   ├── ride/[id]/page.tsx        # Ride tracking
+│   │   │   ├── ride/[id]/rate/page.tsx   # Rating
+│   │   │   └── analytics/page.tsx        # ML metrics
+│   │   ├── api/                          # API routes
+│   │   │   ├── rides/route.ts
+│   │   │   ├── drivers/route.ts
+│   │   │   └── ml/route.ts              # ML proxy
+│   │   ├── layout.tsx
+│   │   ├── page.tsx                     # Landing page
+│   │   └── globals.css
+│   ├── components/
+│   │   ├── ui/                          # shadcn components
+│   │   ├── map/
+│   │   │   ├── MapView.tsx
+│   │   │   └── DriverMarker.tsx
+│   │   ├── ride/
+│   │   │   ├── RideRequestCard.tsx
+│   │   │   ├── RideStatusBadge.tsx
+│   │   │   └── FareCard.tsx
+│   │   ├── dashboard/
+│   │   │   ├── RiderDashboard.tsx
+│   │   │   └── DriverDashboard.tsx
+│   │   ├── analytics/
+│   │   │   ├── ClusterVisualization.tsx
+│   │   │   └── MetricCard.tsx
+│   │   └── shared/
+│   │       ├── Navbar.tsx
+│   │       ├── LoadingSkeleton.tsx
+│   │       └── RatingStars.tsx
+│   ├── lib/
+│   │   ├── supabase/
+│   │   │   ├── client.ts                # Browser client
+│   │   │   ├── server.ts                # Server client
+│   │   │   └── middleware.ts
+│   │   ├── ml/
+│   │   │   └── api.ts                   # FastAPI client
+│   │   └── utils.ts
+│   ├── hooks/
+│   │   ├── useRealtime.ts
+│   │   ├── useGeolocation.ts
+│   │   └── useRide.ts
+│   └── types/
+│       └── index.ts                     # Shared TypeScript types
+├── ml-service/                          # FastAPI ML Backend
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── models/
+│   │   │   ├── clustering.py
+│   │   │   ├── fare_prediction.py
+│   │   │   └── driver_ranking.py
+│   │   ├── routes/
+│   │   │   ├── cluster.py
+│   │   │   ├── fare.py
+│   │   │   └── ranking.py
+│   │   └── utils/
+│   │       ├── preprocessing.py
+│   │       └── data_generator.py
+│   ├── data/
+│   │   └── synthetic_rides.csv
+│   ├── trained_models/
+│   │   ├── kmeans_model.joblib
+│   │   ├── dbscan_model.joblib
+│   │   ├── fare_rf_model.joblib
+│   │   └── driver_ranking_model.joblib
+│   ├── notebooks/                       # Training notebooks
+│   │   ├── clustering_analysis.ipynb
+│   │   └── fare_model_evaluation.ipynb
+│   ├── requirements.txt
+│   └── Dockerfile
+├── supabase/
+│   ├── migrations/
+│   │   └── 001_initial_schema.sql
+│   └── seed.sql
+├── public/
+│   └── images/
+├── package.json
+├── tailwind.config.ts
+├── tsconfig.json
+└── .env.local
+```
+
+---
+
+## 9. My Recommended Development Order
+
+Here's where I diverge from the original roadmap with practical suggestions:
+
+### Why this order matters
+
+The original plan suggests Database → ML → Backend → Frontend. For a hackathon, I suggest a **slightly modified approach** that delivers a working demo **faster** while still building ML properly:
+
+```
+Phase 1: Project Setup + Database Schema          ← Foundation
+Phase 2: Auth + Basic UI Shell                    ← Visible progress early
+Phase 3: Synthetic Data + ML Models               ← Core intelligence
+Phase 4: FastAPI ML Service                       ← Serve models
+Phase 5: Core Backend (Ride Flow + ML Integration)← Wire everything
+Phase 6: Full Frontend (Dashboards, Maps)         ← Beautiful UI
+Phase 7: Realtime + GPS                           ← Live features
+Phase 8: Rating + Analytics + Polish              ← Final impressive layer
+```
+
+### Rationale for changes:
+1. **Auth + UI shell in Phase 2** — Gives you a working app skeleton early. You can demo partial progress at any checkpoint.
+2. **ML in Phase 3** (not before any UI) — Models need synthetic data from the schema, so schema must come first. But building basic UI shell before ML gives visual confidence.
+3. **Frontend polish last** — shadcn/ui + Tailwind makes polishing very fast once logic works.
+
+---
+
+## 10. Detailed Phase Plan
+
+### Phase 1: Project Setup + Database (Day 1, Part 1)
+1. Initialize Next.js 15 project with TypeScript
+2. Install TailwindCSS v4, shadcn/ui, Framer Motion
+3. Set up Supabase client libraries
+4. Write and execute SQL migrations (schema, enums, indexes, RLS)
+5. Create seed data script
+
+### Phase 2: Authentication + UI Shell (Day 1, Part 2)
+1. Supabase Auth — email/password registration
+2. Role selection (rider/driver) on signup
+3. Middleware for role-based route protection
+4. Basic layout: Navbar, route shells for all pages
+5. Landing page (Hero + features + CTA)
+
+### Phase 3: ML Pipeline (Day 2, Part 1)
+1. Generate synthetic dataset (1000+ rides with geo, time, fare)
+2. Feature engineering (Haversine distance, time encoding, normalization)
+3. Train KMeans + DBSCAN → compare silhouette scores
+4. Train Linear Regression + Random Forest → compare MAE/RMSE/R²
+5. Build driver ranking function
+6. Save all models with joblib
+
+### Phase 4: FastAPI ML Service (Day 2, Part 2)
+1. Set up FastAPI project with model loading
+2. `POST /cluster` — cluster ride requests
+3. `POST /predict-fare` — predict solo/shared fare
+4. `POST /rank-driver` — return ranked driver list
+5. Test endpoints with sample data
+
+### Phase 5: Core Backend Logic (Day 3, Part 1)
+1. Ride request creation (stores in Supabase, triggers ML)
+2. Next.js API routes proxy to FastAPI
+3. Driver fetching + acceptance flow
+4. Ride status updates (requested → accepted → ongoing → completed)
+5. Store ML results in DB
+
+### Phase 6: Full Frontend (Day 3, Part 2 + Day 4)
+1. Rider dashboard — map, ride request form, active ride display
+2. Driver dashboard — incoming requests, accept/decline, toggle availability
+3. Ride tracking page — live map, status timeline, fare breakdown
+4. Leaflet map integration with markers and routes
+
+### Phase 7: Realtime + GPS (Day 4)
+1. Supabase realtime subscriptions on `rides` table
+2. Browser geolocation for driver position updates
+3. Update `driver_locations` every 5 seconds
+4. Live driver marker on rider's map
+
+### Phase 8: Rating + Analytics + Polish (Day 5)
+1. Post-ride rating flow
+2. Driver average rating calculation (Supabase function)
+3. Analytics dashboard — cluster viz, fare charts, model metrics
+4. Loading skeletons, error states, empty states
+5. Framer Motion page transitions
+6. Final testing
+
+---
+
+## 11. Verification Plan
+
+### Automated Tests
+- **Database**: Run SQL migrations against Supabase and verify tables exist via `SELECT` queries
+- **ML Models**: Python unit tests for each model — verify silhouette score > 0.3, R² > 0.5
+- **API Routes**: Test Next.js API routes with `curl` or a test script
+- **FastAPI**: Test ML endpoints with `pytest` and sample payloads
+
+### Browser-Based Verification (per phase)
+- **Phase 2**: Navigate to `/login`, `/register`, verify forms render, test signup/login flow
+- **Phase 6**: Navigate to `/dashboard`, verify map loads, ride request form works
+- **Phase 7**: Open two browser tabs (rider + driver), verify realtime updates
+- **Phase 8**: Complete a ride flow end-to-end and verify rating submission
+
+### Manual Verification
+- Full ride flow walkthrough: Register → Request Ride → Driver Accepts → Track → Complete → Rate
+- Verify ML results appear in the ride (cluster, predicted fare, driver ranking)
+- Check analytics dashboard shows model performance metrics
+
+---
+
+## 12. Key Suggestions & Decisions
+
+### What I'd do differently from the original plan:
+
+1. **Skip separate PostGIS setup initially** — Use Haversine distance calculation in application code. PostGIS is powerful but adds setup complexity. Can be added later as an optimization.
+
+2. **Leaflet over Google Maps / Mapbox** — Free, no API keys, looks great, works everywhere. For a hackathon, this is the smartest choice.
+
+3. **Keep FastAPI for architecture points** — Even though embedding ML in Next.js API routes is simpler, a separate FastAPI service shows judges the "microservice architecture" which scores higher. We'll keep it but make it lightweight.
+
+4. **Anomaly detection is a stretch goal** — Build it only if the core 3 models (clustering, fare, ranking) are solid and time permits.
+
+5. **Use Recharts for analytics** — Lightweight, React-native, easy to show ML model performance visually.
+
+6. **Framer Motion only on key transitions** — Landing page hero, page transitions, card animations. Don't over-animate the core ride flow — it should feel fast and functional.

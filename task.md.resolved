@@ -1,0 +1,45 @@
+# MySmartHop – Project Planning Tasks
+
+## Phase 0: Planning & Architecture
+- [x] Understand full project requirements and roadmap
+- [x] Analyze tech stack feasibility and suggest optimizations
+- [x] Create PRD (Product Requirements Document)
+- [x] Design system architecture + ML architecture
+- [x] Define folder structure
+- [x] Define page/component mapping
+- [x] Finalize development phase order
+- [x] Get user approval on plan
+
+## Phase 1: Database & Schema
+- [x] Design Supabase SQL schema with PostGIS
+- [ ] Create seed script / synthetic dataset (→ deferred to ML phase)
+
+## Phase 2: ML Pipeline
+- [ ] Data preprocessing pipeline
+- [ ] Clustering models (KMeans + DBSCAN)
+- [ ] Fare prediction models (Linear Regression + Random Forest)
+- [ ] Driver ranking model
+- [ ] FastAPI ML service
+
+## Phase 3: Authentication & Backend
+- [ ] Supabase auth with role-based access
+- [ ] Core backend logic (ride request, status, etc.)
+- [ ] ML API integration into backend
+
+## Phase 4: Frontend Development
+- [ ] Landing page
+- [ ] Auth pages (Login/Register)
+- [ ] Public user dashboard
+- [ ] Driver dashboard
+- [ ] Ride request UI
+- [ ] Live ride status page
+
+## Phase 5: Realtime, GPS, Ratings
+- [ ] Supabase realtime subscriptions
+- [ ] GPS tracking (browser geolocation)
+- [ ] Rating system
+
+## Phase 6: Polish & Analytics
+- [ ] Analytics / ML metrics dashboard
+- [ ] UI polish, skeletons, animations
+- [ ] Testing & optimization

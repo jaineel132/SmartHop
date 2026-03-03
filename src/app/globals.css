@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --color-background: oklch(0.05 0 0); /* Near black */
+  --color-foreground: oklch(0.95 0 0); /* Near white */
+
+  --color-card: oklch(0.12 0 0);
+  --color-card-foreground: oklch(0.95 0 0);
+
+  --color-primary: oklch(0.75 0.15 250); /* A refined blue */
+  --color-primary-foreground: oklch(0.05 0 0);
+
+  --color-secondary: oklch(0.2 0 0);
+  --color-secondary-foreground: oklch(0.95 0 0);
+
+  --color-accent: oklch(0.9 0.1 90); /* Subtle lime/yellow accent for contrast */
+  --color-accent-foreground: oklch(0.05 0 0);
+
+  --color-muted: oklch(0.18 0 0);
+  --color-muted-foreground: oklch(0.6 0 0);
+
+  --color-border: oklch(0.25 0 0);
+  --color-input: oklch(0.25 0 0);
+  --color-ring: oklch(0.75 0.15 250);
+
+  --radius-lg: 0px; /* Brutalist sharp corners */
+  --radius-md: 0px;
+  --radius-sm: 0px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Custom Brutalist Utility */
+.brutalist-border {
+  border: 2px solid var(--color-foreground);
+  box-shadow: 4px 4px 0px 0px var(--color-foreground);
+}
+
+.brutalist-card {
+  @apply bg-card p-6 border-2 border-foreground;
+  box-shadow: 8px 8px 0px 0px var(--color-foreground);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
