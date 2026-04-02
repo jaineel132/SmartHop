@@ -92,7 +92,7 @@ app.include_router(route.router, prefix="/api", tags=["Route Optimization"])
 app.include_router(ranking.router, prefix="/api", tags=["Driver Ranking"])
 app.include_router(analytics.router, prefix="/api", tags=["Model Analytics"])
 
-@app.get("/health")
+@app.get("/api/health")
 async def health():
     return {
         "status": "ok",

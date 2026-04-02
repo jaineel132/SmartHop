@@ -27,9 +27,9 @@ const STEPS = [
   }
 ]
 
-export function HowItWorks() {
+export function HowItWorks({ id }: { id?: string }) {
   return (
-    <section className="bg-white py-16 md:py-24 dark:bg-slate-950">
+    <section id={id} className="bg-white py-16 md:py-24 dark:bg-slate-950">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16 space-y-4">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
