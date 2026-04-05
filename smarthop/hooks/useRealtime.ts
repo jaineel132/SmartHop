@@ -53,7 +53,7 @@ export function useDriverLocation(driverId: string | null): DriverLocationState 
           table: 'driver_locations',
           filter: `driver_id=eq.${driverId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const newData = payload.new as { lat: number; lng: number; updated_at: string }
           setLocation({
             lat: newData.lat,

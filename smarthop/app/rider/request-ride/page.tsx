@@ -20,18 +20,21 @@ import FareBreakdownAccordion from '@/components/rider/FareBreakdownAccordion'
 
 const RideRequestMap = dynamic(() => import('@/components/maps/RideRequestMap'), { ssr: false })
 
-const supabase = createSupabaseBrowserClient()
+
 
 const LOADING_MESSAGES = [
-  'Finding riders near you...',
-  'Grouping by direction...',
-  'Calculating best route...',
+  "Looking for nearby riders...",
+  "Analyzing metro routes...",
+  "Calculating shared fare logic...",
+  "Running ML routing algorithms...",
+  "Securing your savings...",
 ]
 
 function RequestRideContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
+  const [supabase] = useState(() => createSupabaseBrowserClient())
 
   const [step, setStep] = useState(1)
   const [pickupStationId, setPickupStationId] = useState('')
@@ -45,12 +48,13 @@ function RequestRideContent() {
   const [groupId, setGroupId] = useState<string | null>(null)
   const [isMLDown, setIsMLDown] = useState(false)
   const [isConfirming, setIsConfirming] = useState(false)
+  const [memberNames, setMemberNames] = useState<string[]>([])
+  const [dbStationId, setDbStationId] = useState<string | null>(null)
 
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0)
 
   const pickupStation = MUMBAI_METRO_STATIONS.find(s => s.id === pickupStationId) || null
 
-  // Pre-fill from URL param
   useEffect(() => {
     const stationParam = searchParams.get('station')
     if (stationParam) {
@@ -65,7 +69,7 @@ function RequestRideContent() {
     setDestAddress(address)
   }
 
-  // Step 3: ML Clustering
+  // Step 3: ML Clustering Initiation
   const runClustering = async () => {
     if (!pickupStation || destLat === null || destLng === null || !user) return
 
@@ -77,51 +81,25 @@ function RequestRideContent() {
       setLoadingMsgIndex(prev => (prev + 1) % LOADING_MESSAGES.length)
     }, 1500)
 
-    const hour = getCurrentHour()
-    const day = getCurrentDayOfWeek()
-    const demand = getDemandLevel(hour, day)
-    const distanceMeters = haversineDistance(pickupStation.lat, pickupStation.lng, destLat, destLng)
-    const distanceKm = distanceMeters / 1000
-
-    // Helper: create fallback data
-    const useFallback = () => {
-      setIsMLDown(true)
-      setClusterResult({
-        cluster_id: 'mock',
-        rider_ids: [user.id],
-        cluster_size: 2,
-        center_lat: pickupStation.lat,
-        center_lng: pickupStation.lng,
-      })
-      const baseFare = Math.max(25, distanceKm * 12)
-      setFareResult({
-        shared_fare: Math.round(baseFare * 0.65),
-        solo_fare: Math.round(baseFare),
-        savings_pct: 35,
-        explanation: {
-          distance_impact_pct: 60,
-          sharing_discount_pct: 35,
-          time_surge_pct: 5,
-          human_readable: `Estimated fare for ${distanceKm.toFixed(1)}km shared ride with 2 riders.`,
-        },
-      })
-    }
-
     try {
-      // 1. Try to create ride_request in Supabase (non-blocking for ML)
-      let savedRideRequestId: string | null = null
-      try {
-        const { data: dbStation } = await supabase
-          .from('metro_stations')
-          .select('id')
-          .eq('name', pickupStation.name)
-          .single()
+      const { data: dbStation } = await supabase
+        .from('metro_stations')
+        .select('id')
+        .eq('name', pickupStation.name)
+        .single()
+
+      if (dbStation) {
+        setDbStationId(dbStation.id)
+        
+        const hour = getCurrentHour()
+        const day = getCurrentDayOfWeek()
+        const demand = getDemandLevel(hour, day)
 
         const { data: rideReq, error: rideErr } = await supabase
           .from('ride_requests')
           .insert({
             user_id: user.id,
-            pickup_station_id: dbStation?.id,
+            pickup_station_id: dbStation.id,
             dest_lat: destLat,
             dest_lng: destLng,
             dest_address: destAddress,
@@ -134,163 +112,255 @@ function RequestRideContent() {
           .single()
 
         if (!rideErr && rideReq) {
-          savedRideRequestId = rideReq.id
           setRideRequestId(rideReq.id)
         } else {
           console.warn('Supabase ride_request insert failed:', rideErr)
         }
-      } catch (dbErr) {
-        console.warn('Supabase ride_request error:', dbErr)
       }
+      // Artificial delay to show the loading screen
+      await new Promise(resolve => setTimeout(resolve, 2500))
 
-      // 2. Call ML clustering with 10s timeout
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 10000)
-
-      try {
-        const clusters = await ML_API.clusterRiders([
-          {
-            user_id: user.id,
-            pickup_lat: pickupStation.lat,
-            pickup_lng: pickupStation.lng,
-            drop_lat: destLat,
-            drop_lng: destLng,
-          },
-        ])
-        clearTimeout(timeout)
-
-        const cluster = clusters[0] || {
-          cluster_id: 'mock',
-          rider_ids: [user.id],
-          cluster_size: 2,
-          center_lat: pickupStation.lat,
-          center_lng: pickupStation.lng,
-        }
-        setClusterResult(cluster)
-
-        // 3. Call fare prediction with 10s timeout
-        const fareController = new AbortController()
-        const fareTimeout = setTimeout(() => fareController.abort(), 10000)
-
-        try {
-          const fareRaw: any = await ML_API.predictFare(
-            distanceKm, cluster.cluster_size, hour, day, demand
-          )
-          clearTimeout(fareTimeout)
-
-          setFareResult({
-            shared_fare: fareRaw.shared_fare,
-            solo_fare: fareRaw.solo_fare,
-            savings_pct: fareRaw.savings_pct,
-            explanation: {
-              distance_impact_pct: fareRaw.distance_impact_pct ?? 60,
-              sharing_discount_pct: fareRaw.sharing_discount_pct ?? 30,
-              time_surge_pct: fareRaw.time_surge_pct ?? 10,
-              human_readable: fareRaw.human_readable ?? '',
-            },
-          })
-        } catch {
-          clearTimeout(fareTimeout)
-          // Fare prediction failed, use local calculation
-          const baseFare = Math.max(25, distanceKm * 12)
-          setFareResult({
-            shared_fare: Math.round(baseFare * 0.65),
-            solo_fare: Math.round(baseFare),
-            savings_pct: 35,
-            explanation: {
-              distance_impact_pct: 60,
-              sharing_discount_pct: 35,
-              time_surge_pct: 5,
-              human_readable: `Estimated fare for ${distanceKm.toFixed(1)}km shared ride with ${cluster.cluster_size} riders.`,
-            },
-          })
-          setIsMLDown(true)
-        }
-      } catch {
-        clearTimeout(timeout)
-        useFallback()
-      }
     } catch (err) {
       console.warn('Clustering flow error:', err)
-      useFallback()
     } finally {
       clearInterval(interval)
       setStep(4)
     }
   }
 
-  // Step 5: Confirm
-  const handleConfirm = async () => {
-    if (!clusterResult || !fareResult || !user || !pickupStation) return
+  // Live Waiting Room via Supabase Realtime
+  useEffect(() => {
+    if (step !== 4 || !user || !dbStationId || !pickupStation || !destLat || !destLng) return
 
+    const refreshCluster = async () => {
+      try {
+        const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+        const { data: pendingRequests } = await supabase
+          .from('ride_requests')
+          .select('user_id, dest_lat, dest_lng')
+          .eq('pickup_station_id', dbStationId)
+          .in('status', ['pending', 'confirmed'])
+          .gte('created_at', tenMinAgo)
+
+        let allRiders: any[] = []
+        if (pendingRequests && pendingRequests.length > 0) {
+          allRiders = pendingRequests.map((r: any) => ({
+            user_id: r.user_id,
+            pickup_lat: pickupStation.lat,
+            pickup_lng: pickupStation.lng,
+            drop_lat: r.dest_lat,
+            drop_lng: r.dest_lng,
+          }))
+        }
+
+        if (!allRiders.find((r: any) => r.user_id === user.id)) {
+          allRiders.push({
+            user_id: user.id,
+            pickup_lat: pickupStation.lat,
+            pickup_lng: pickupStation.lng,
+            drop_lat: destLat,
+            drop_lng: destLng,
+          })
+        }
+
+        const clusters: any = await ML_API.clusterRiders(allRiders).catch(() => null)
+        let myCluster: any = null
+        if (clusters && Array.isArray(clusters)) {
+          myCluster = clusters.find((c: any) => c.rider_ids?.includes(user.id)) || null
+          if (!myCluster && clusters.length > 0) myCluster = clusters[0]
+        }
+
+        const clusterSize = Math.max(allRiders.length, 1)
+        if (!myCluster) {
+          setIsMLDown(true)
+          myCluster = {
+            cluster_id: `local_${dbStationId}`,
+            rider_ids: allRiders.map((r: any) => r.user_id),
+            cluster_size: clusterSize,
+            center_lat: pickupStation.lat,
+            center_lng: pickupStation.lng,
+          }
+        } else {
+          setIsMLDown(false)
+        }
+
+        setClusterResult(myCluster)
+
+        if (myCluster?.rider_ids) {
+          const { data: _users, error: uErr } = await supabase
+            .from('users')
+            .select('id, name')
+            .in('id', myCluster.rider_ids)
+          
+          if (uErr) console.warn('User names fetch error:', uErr)
+          
+          if (_users) {
+            // Keep all names except the current user's
+            const names = _users
+              .filter((u: any) => u.id !== user.id)
+              .map((u: any) => u.name || 'Anonymous Rider')
+            setMemberNames(names)
+            console.log('AUTO-MATCH: Found names for cluster:', names)
+          }
+        }
+
+        const hour = getCurrentHour()
+        const day = getCurrentDayOfWeek()
+        const demand = getDemandLevel(hour, day)
+        const distanceMeters = haversineDistance(pickupStation.lat, pickupStation.lng, destLat, destLng)
+        const distanceKm = distanceMeters / 1000
+        
+        const clusterRiderIds = myCluster.rider_ids || []
+        const clusterRiders = allRiders.filter((r: any) => clusterRiderIds.includes(r.user_id))
+        const allSameDestination = clusterRiders.length > 1 && clusterRiders.every((r: any) => {
+          return haversineDistance(r.drop_lat, r.drop_lng, destLat, destLng) < 1000
+        })
+
+        // Proportional fare calculation: each rider pays based on their distance
+        const calcProportionalFare = (clusterSz: number) => {
+          // This rider's solo fare (what they'd pay alone)
+          const soloFare = Math.round(Math.max(25, distanceKm * 12))
+          
+          if (clusterSz <= 1) {
+            return {
+              shared_fare: soloFare,
+              solo_fare: soloFare,
+              savings_pct: 0,
+              explanation: {
+                distance_impact_pct: 60,
+                sharing_discount_pct: 0,
+                time_surge_pct: 5,
+                human_readable: `Solo ride fare for ${distanceKm.toFixed(1)}km.`,
+              },
+            }
+          }
+          
+          // Shared ride discount: 30% off solo fare (proportional to distance)
+          const sharedFare = Math.round(soloFare * 0.7)
+          const discount = Math.round((1 - sharedFare / soloFare) * 100)
+          
+          return {
+            shared_fare: sharedFare,
+            solo_fare: soloFare,
+            savings_pct: discount,
+            explanation: {
+              distance_impact_pct: 60,
+              sharing_discount_pct: discount,
+              time_surge_pct: 5,
+              human_readable: `Your fare of ₹${sharedFare} is based on your ${distanceKm.toFixed(1)}km trip, shared among ${clusterSz} riders. You save ${discount}% vs solo (₹${soloFare})!`,
+            },
+          }
+        }
+
+        const fareRaw: any = await ML_API.predictFare(distanceKm, myCluster.cluster_size || 1, hour, day, demand).catch(() => null)
+        if (fareRaw?.shared_fare && fareRaw?.solo_fare && fareRaw.shared_fare <= fareRaw.solo_fare) {
+          // ML prediction valid — use it but ensure shared < solo for groups
+          const mlShared = myCluster.cluster_size > 1 
+            ? Math.round(fareRaw.solo_fare * 0.7) 
+            : fareRaw.solo_fare
+          const mlSavings = myCluster.cluster_size > 1 
+            ? Math.round((1 - mlShared / fareRaw.solo_fare) * 100) 
+            : 0
+          setFareResult({
+            shared_fare: mlShared,
+            solo_fare: fareRaw.solo_fare,
+            savings_pct: mlSavings,
+            explanation: {
+              distance_impact_pct: fareRaw.distance_impact_pct ?? 60,
+              sharing_discount_pct: mlSavings,
+              time_surge_pct: fareRaw.time_surge_pct ?? 10,
+              human_readable: `Your fare of ₹${mlShared} is based on your ${distanceKm.toFixed(1)}km trip, shared among ${myCluster.cluster_size} riders. You save ${mlSavings}% vs solo (₹${Math.round(fareRaw.solo_fare)})!`,
+            },
+          })
+        } else {
+          setFareResult(calcProportionalFare(myCluster.cluster_size || allRiders.length))
+        }
+      } catch (err) {
+        console.error('Error in live waiting room lookup:', err)
+      }
+    }
+
+    // Initial load
+    refreshCluster()
+
+    // Real-time subscription
+    const channel = supabase
+      .channel(`waiting_room_${dbStationId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ride_requests', filter: `pickup_station_id=eq.${dbStationId}` },
+        () => {
+          refreshCluster()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [step, user, dbStationId, pickupStation, destLat, destLng])
+
+  const confirmInitiated = React.useRef(false)
+  // Step 5: Confirm
+  // Generate a deterministic cluster ID from sorted member IDs
+  const generateStableClusterId = (memberIds: string[]) => {
+    return [...memberIds].sort().join(':')
+  }
+
+  const handleConfirm = async () => {
+    if (!clusterResult || !fareResult || !user || !pickupStation || !dbStationId || confirmInitiated.current) return
+
+    confirmInitiated.current = true
     setIsConfirming(true)
     try {
-      // Update ride_request status (if it was saved)
-      if (rideRequestId) {
-        await supabase
-          .from('ride_requests')
-          .update({ status: 'confirmed' })
-          .eq('id', rideRequestId)
+      // Stable Cluster Logic:
+      // If we have an ML-confirmed cluster ID that isn't a "solo" ID, use it.
+      // Otherwise, fallback to a station-based key to combine solo riders at the same station.
+      let stableClusterKey = clusterResult.cluster_id;
+      
+      if (stableClusterKey.startsWith('solo_') || stableClusterKey.startsWith('local_')) {
+        // Fallback: everyone at this station going to similar destinations (within ~1km) 
+        // can join the same group if the ML service is struggling or they are solo.
+        const destHash = `${Math.round(destLat! * 100)}_${Math.round(destLng! * 100)}`;
+        stableClusterKey = `stn_${dbStationId}_${destHash}`;
       }
 
-      // Look up station UUID for ride_groups
-      const { data: dbStation } = await supabase
-        .from('metro_stations')
-        .select('id')
-        .eq('name', pickupStation.name)
-        .single()
+      // Calculate this rider's individual trip distance
+      const riderDistanceKm = haversineDistance(pickupStation.lat, pickupStation.lng, destLat!, destLng!) / 1000;
 
-      // Insert ride_group
-      const { data: group, error: groupErr } = await supabase
-        .from('ride_groups')
-        .insert({
-          station_id: dbStation?.id,
-          cluster_id: clusterResult.cluster_id,
-          status: 'forming',
-          fare_total: fareResult.shared_fare * clusterResult.cluster_size,
-          distance_km: haversineDistance(
-            pickupStation.lat, pickupStation.lng, destLat!, destLng!
-          ) / 1000,
-          duration_min: 15,
-        })
-        .select()
-        .single()
-
-      if (groupErr) throw groupErr
-
-      const newGroupId = group.id
-      setGroupId(newGroupId)
-
-      // Insert ride_member
-      const { error: memberErr } = await supabase.from('ride_members').insert({
-        group_id: newGroupId,
-        user_id: user.id,
-        request_id: rideRequestId,
-        fare_share: fareResult.shared_fare,
-        savings_pct: fareResult.savings_pct,
-        solo_fare: fareResult.solo_fare,
-        status: 'confirmed',
+      const { data: finalGroupId, error: rpcErr } = await supabase.rpc('confirm_ride', {
+        p_user_id: user.id,
+        p_pickup_station_id: dbStationId,
+        p_cluster_id: stableClusterKey,
+        p_ride_request_id: rideRequestId,
+        p_fare_total: fareResult.solo_fare,        // Group total: RPC will recalculate as sum of shares
+        p_distance_km: riderDistanceKm,             // This rider's individual distance
+        p_duration_min: 15,
+        p_fare_share: fareResult.shared_fare,        // Initial share (RPC recalculates proportionally)
+        p_savings_pct: fareResult.savings_pct,
+        p_solo_fare: fareResult.solo_fare,           // What this rider would pay solo
       })
-      if (memberErr) throw memberErr
 
-      // Insert fare_transaction
-      const { error: fareErr } = await supabase.from('fare_transactions').insert({
-        group_id: newGroupId,
-        user_id: user.id,
-        amount: fareResult.shared_fare,
-        status: 'pending',
-      })
-      if (fareErr) throw fareErr
+      if (rpcErr) throw rpcErr
 
-      toast.success('Ride confirmed!')
-      router.push(`/rider/tracking/${newGroupId}`)
+      toast.success('🎉 Ride confirmed!')
+      router.push(`/rider/tracking/${finalGroupId}?requestId=${rideRequestId}`)
     } catch (err: any) {
-      console.error('Confirm Ride Error:', err.message || err, err.details, err.hint)
-      toast.error(err.message || 'Failed to confirm ride')
+      console.warn('Confirmation error:', err)
+      toast.error('Failed to confirm ride. Please try again.')
     } finally {
       setIsConfirming(false)
     }
   }
+
+  // Auto-confirm if cluster reaches exactly 3 riders
+  useEffect(() => {
+    if (step === 4 && clusterResult?.cluster_size === 3 && fareResult && !isConfirming && !confirmInitiated.current) {
+      console.log('AUTO-CONFIRM: Cluster reached size 3. Finalizing...')
+      handleConfirm()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, clusterResult?.cluster_size, fareResult])
 
   const progressPct = (step / 5) * 100
 
@@ -323,7 +393,7 @@ function RequestRideContent() {
       {isMLDown && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-center">
           <p className="text-sm text-amber-700 font-medium">
-            ⚡ ML service starting up — showing estimated grouping
+            ⚡ ML service down — using offline estimates
           </p>
         </div>
       )}
@@ -450,6 +520,7 @@ function RequestRideContent() {
                 clusterResult={clusterResult}
                 fareResult={fareResult}
                 station={pickupStation}
+                memberNames={memberNames}
               />
 
               <FareBreakdownAccordion fareResult={fareResult} />

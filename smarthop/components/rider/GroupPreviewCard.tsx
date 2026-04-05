@@ -11,14 +11,17 @@ interface GroupPreviewCardProps {
   clusterResult: ClusterGroup
   fareResult: FarePrediction
   station: MetroStation
+  memberNames?: string[]
 }
 
-export default function GroupPreviewCard({ clusterResult, fareResult, station }: GroupPreviewCardProps) {
+export default function GroupPreviewCard({ clusterResult, fareResult, station, memberNames }: GroupPreviewCardProps) {
   const otherRiders = clusterResult.cluster_size - 1
   const displayAvatars = Math.min(otherRiders, 3)
   const overflow = otherRiders - displayAvatars
 
-  const initials = ['AK', 'RS', 'PM', 'DG', 'VN']
+  const initials = memberNames && memberNames.length > 0
+    ? memberNames.map(n => n.substring(0, 2).toUpperCase())
+    : ['AK', 'RS', 'PM', 'DG', 'VN']
 
   return (
     <Card className="shadow-lg border-slate-200/60 overflow-hidden">
@@ -78,6 +81,20 @@ export default function GroupPreviewCard({ clusterResult, fareResult, station }:
             </Badge>
           </div>
         </div>
+
+        {/* Rider Names */}
+        {memberNames && memberNames.length > 0 && (
+          <div className="bg-slate-50 rounded-2xl p-4 mt-4">
+            <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Matched With</p>
+            <div className="flex flex-wrap gap-2">
+              {memberNames.map((name, i) => (
+                <Badge key={i} className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200">
+                  {name}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Info Chips */}
         <div className="flex gap-3">

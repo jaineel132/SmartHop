@@ -22,15 +22,24 @@ import {
   Users,
   LogOut,
   Ticket,
-  IndianRupee
+  IndianRupee,
+  Car,
+  Bike
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
-const STEPS = [
+const RIDER_STEPS = [
   { id: 1, name: 'Home Station' },
   { id: 2, name: 'Notifications' },
   { id: 3, name: 'How it Works' },
+]
+
+const DRIVER_STEPS = [
+  { id: 1, name: 'Home Station' },
+  { id: 2, name: 'Vehicle Info' },
+  { id: 3, name: 'Notifications' },
+  { id: 4, name: 'How it Works' },
 ]
 
 export default function OnboardingPage() {
@@ -45,6 +54,14 @@ export default function OnboardingPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [tutorialSlide, setTutorialSlide] = useState(0)
+  const [vehicleType, setVehicleType] = useState<'auto' | 'car' | null>(null)
+  const [vehicleNumber, setVehicleNumber] = useState('')
+
+  const isDriver = userRole === 'driver'
+  const STEPS = isDriver ? DRIVER_STEPS : RIDER_STEPS
+  const totalSteps = STEPS.length
+  const notifStep = isDriver ? 3 : 2
+  const tutorialStep = isDriver ? 4 : 3
 
   const TUTORIAL_SLIDES = [
     {
@@ -94,7 +111,7 @@ export default function OnboardingPage() {
     router.push('/auth/login')
   }
 
-  const nextStep = () => setCurrentStep((prev) => Math.min(prev + 1, 3))
+  const nextStep = () => setCurrentStep((prev) => Math.min(prev + 1, totalSteps))
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1))
 
   const filteredStations = MUMBAI_METRO_STATIONS.filter((s) =>
@@ -103,9 +120,13 @@ export default function OnboardingPage() {
 
   const handleCompleteOnboarding = async () => {
     if (!userId || !selectedStation) return
+    if (isDriver && (!vehicleType || !vehicleNumber.trim())) {
+      toast.error('Please enter your vehicle details')
+      return
+    }
 
     try {
-      // 1. Get the actual station UUID from the database because our local IDs are short strings
+      // 1. Get the actual station UUID from the database
       const station = MUMBAI_METRO_STATIONS.find(s => s.id === selectedStation)
       if (!station) throw new Error('Station not found in local list')
 
@@ -119,17 +140,24 @@ export default function OnboardingPage() {
       if (stationError) throw stationError
       if (!dbStation) throw new Error(`Station "${station.name}" not found in database`)
 
-      // 2. Perform upsert with the real UUID
+      // 2. Perform upsert with the real UUID + vehicle info for drivers
+      const upsertData: any = {
+        id: userId,
+        email: userEmail,
+        name: userName,
+        home_station_id: dbStation.id,
+        onboarding_complete: true,
+        role: userRole || 'rider',
+      }
+
+      if (isDriver) {
+        upsertData.vehicle_type = vehicleType
+        upsertData.vehicle_number = vehicleNumber.trim().toUpperCase()
+      }
+
       const { error } = await supabase
         .from('users')
-        .upsert({
-          id: userId,
-          email: userEmail,
-          name: userName, // Satisfy NOT NULL constraint
-          home_station_id: dbStation.id,
-          onboarding_complete: true,
-          role: userRole || 'rider',
-        })
+        .upsert(upsertData)
 
       if (error) throw error
 
@@ -239,9 +267,82 @@ export default function OnboardingPage() {
               </motion.div>
             )}
 
-            {currentStep === 2 && (
+            {/* Step 2 for Drivers: Vehicle Info */}
+            {isDriver && currentStep === 2 && (
               <motion.div
-                key="step2"
+                key="step2-vehicle"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Your Vehicle Details</CardTitle>
+                    <CardDescription>
+                      Enter your vehicle type and registration number. This determines how many riders you can carry.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div>
+                      <Label className="text-sm font-semibold text-slate-600 mb-3 block">Vehicle Type</Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={() => setVehicleType('auto')}
+                          className={cn(
+                            "flex flex-col items-center gap-2 rounded-xl border-2 p-5 transition-all",
+                            vehicleType === 'auto'
+                              ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
+                              : "border-slate-200 hover:bg-slate-50"
+                          )}
+                        >
+                          <Bike className={cn("h-8 w-8", vehicleType === 'auto' ? 'text-blue-600' : 'text-slate-400')} />
+                          <span className="font-semibold text-sm">Auto Rickshaw</span>
+                          <span className="text-xs text-slate-500">Max 3 riders</span>
+                        </button>
+                        <button
+                          onClick={() => setVehicleType('car')}
+                          className={cn(
+                            "flex flex-col items-center gap-2 rounded-xl border-2 p-5 transition-all",
+                            vehicleType === 'car'
+                              ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
+                              : "border-slate-200 hover:bg-slate-50"
+                          )}
+                        >
+                          <Car className={cn("h-8 w-8", vehicleType === 'car' ? 'text-blue-600' : 'text-slate-400')} />
+                          <span className="font-semibold text-sm">Car</span>
+                          <span className="text-xs text-slate-500">Max 4 riders</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="vehicle-number" className="text-sm font-semibold text-slate-600">Vehicle Number</Label>
+                      <Input
+                        id="vehicle-number"
+                        placeholder="e.g. MH 02 AB 1234"
+                        className="mt-2 uppercase"
+                        value={vehicleNumber}
+                        onChange={(e) => setVehicleNumber(e.target.value)}
+                      />
+                    </div>
+
+                    <Button
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      disabled={!vehicleType || !vehicleNumber.trim()}
+                      onClick={nextStep}
+                    >
+                      Next Step <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Notifications step */}
+            {currentStep === notifStep && (
+              <motion.div
+                key="step-notif"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -269,7 +370,7 @@ export default function OnboardingPage() {
               </motion.div>
             )}
 
-            {currentStep === 3 && (
+            {currentStep === tutorialStep && (
               <motion.div
                 key="step3"
                 initial={{ opacity: 0, x: 20 }}

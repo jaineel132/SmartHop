@@ -16,7 +16,7 @@ def calculate_fare_response(model, scaler, request_data: FareRequest):
     # Derive is_rush_hour (8-11 AM or 5-8 PM)
     is_rush = 1 if (8 <= request_data.hour <= 11) or (17 <= request_data.hour <= 20) else 0
     
-    # Prepare features: distance_km, cluster_size, hour, day_of_week, demand_level, is_rush_hour
+    # Prepare features: distance_km, cluster_size, hour, day_of_week, demand_level
     features = [[
         request_data.distance_km,
         request_data.cluster_size,
@@ -25,12 +25,14 @@ def calculate_fare_response(model, scaler, request_data: FareRequest):
         request_data.demand_level,
         is_rush
     ]]
+    print(f"Features before scale (shared): {features}")
     
     # Scale features
     X_scaled = scaler.transform(features)
     
     # Predict shared fare
     shared_fare = float(model.predict(X_scaled)[0])
+    print(f"Prediction (shared): {shared_fare}")
     
     # Calculate solo fare (as if they were alone)
     solo_features = [[
@@ -41,8 +43,17 @@ def calculate_fare_response(model, scaler, request_data: FareRequest):
         request_data.demand_level,
         is_rush
     ]]
+    print(f"Features before scale (solo): {solo_features}")
     X_solo_scaled = scaler.transform(solo_features)
     solo_fare = float(model.predict(X_solo_scaled)[0])
+    print(f"Prediction (solo): {solo_fare}")
+    
+    # Override shared fare: each rider gets 30% discount for sharing (proportional to their distance)
+    if request_data.cluster_size > 1:
+        shared_fare = round(solo_fare * 0.7, 2)
+    else:
+        shared_fare = solo_fare
+    print(f"Overridden Prediction (shared): {shared_fare}")
     
     # Savings
     savings_pct = ((solo_fare - shared_fare) / solo_fare) * 100 if solo_fare > 0 else 0

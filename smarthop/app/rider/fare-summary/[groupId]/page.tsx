@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { CheckCircle2, Star, ArrowRight, MapPin, Clock, Users, Route } from 'lucide-react'
@@ -9,16 +9,27 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription 
+} from '@/components/ui/dialog'
 import { formatCurrency } from '@/lib/utils'
 import FareBreakdownAccordion from '@/components/rider/FareBreakdownAccordion'
 import { FarePrediction } from '@/types'
 
-const supabase = createSupabaseBrowserClient()
 
 export default function FareSummaryPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = use(params)
   const router = useRouter()
   const { user } = useAuth()
+   const [supabase] = useState(() => createSupabaseBrowserClient())
+   const searchParams = useSearchParams()
+   const requestId = searchParams.get('requestId')
+
+  const [showRatingModal, setShowRatingModal] = useState(false)
 
   const [fareShare, setFareShare] = useState(0)
   const [soloFare, setSoloFare] = useState(0)
@@ -61,13 +72,19 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
           }
         }
 
-        // Fetch member data for current user
-        const { data: member } = await supabase
+        // Fetch member data for current user's specific request
+        let memberQuery = supabase
           .from('ride_members')
           .select('fare_share, solo_fare, savings_pct')
           .eq('group_id', groupId)
-          .eq('user_id', user.id)
-          .single()
+
+        if (requestId) {
+          memberQuery = memberQuery.eq('request_id', requestId)
+        } else {
+          memberQuery = memberQuery.eq('user_id', user.id)
+        }
+
+        const { data: member } = await memberQuery.limit(1).maybeSingle()
 
         if (member) {
           setFareShare(member.fare_share)
@@ -86,6 +103,8 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
         console.warn('Error fetching fare summary:', err)
       } finally {
         setLoading(false)
+        // Show rating modal automatically after loading if not already rated
+        setTimeout(() => setShowRatingModal(true), 1500)
       }
     }
 
@@ -113,23 +132,11 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
         .eq('id', driverId)
 
       setRatingSubmitted(true)
+      setShowRatingModal(false)
       toast.success('Thanks for rating!')
     } catch {
       toast.error('Failed to submit rating')
     }
-  }
-
-  // Build fare prediction object for the breakdown accordion
-  const farePrediction: FarePrediction = {
-    shared_fare: fareShare,
-    solo_fare: soloFare,
-    savings_pct: savingsPct,
-    explanation: {
-      distance_impact_pct: 60,
-      sharing_discount_pct: savingsPct || 35,
-      time_surge_pct: 5,
-      human_readable: `Your fare of ${formatCurrency(fareShare)} is shared among ${coRiders + 1} riders over ${distanceKm.toFixed(1)}km.`,
-    },
   }
 
   if (loading) {
@@ -140,7 +147,31 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
     )
   }
 
-  const savingsAmount = soloFare - fareShare
+  // Safety: correct impossible fare values
+  const riderCount = coRiders + 1
+  const correctedShare = fareTotal > 0 && fareShare > fareTotal
+    ? Math.round((fareTotal / riderCount) * 100) / 100
+    : fareShare
+  const correctedSoloFare = soloFare > 0 ? soloFare : correctedShare
+  const correctedSavings = correctedSoloFare > correctedShare 
+    ? correctedSoloFare - correctedShare 
+    : 0
+  const correctedSavingsPct = correctedSoloFare > 0 && correctedSavings > 0
+    ? Math.round((correctedSavings / correctedSoloFare) * 100)
+    : savingsPct > 0 && correctedSavings > 0 ? savingsPct : 0
+
+  // Build fare prediction object for the breakdown accordion
+  const farePrediction: FarePrediction = {
+    shared_fare: correctedShare,
+    solo_fare: correctedSoloFare,
+    savings_pct: correctedSavingsPct,
+    explanation: {
+      distance_impact_pct: 60,
+      sharing_discount_pct: correctedSavingsPct || 30,
+      time_surge_pct: 5,
+      human_readable: `Your fare of ${formatCurrency(correctedShare)} is based on your trip distance, shared among ${coRiders + 1} riders over ${distanceKm.toFixed(1)}km.`,
+    },
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-slate-50 pb-24 font-sans">
@@ -180,7 +211,7 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
           <Card className="shadow-lg border-green-200/60 overflow-hidden">
             <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-5 text-center text-white">
               <p className="text-green-100 text-sm font-medium">Your Share</p>
-              <p className="text-4xl font-bold mt-1">{formatCurrency(fareShare)}</p>
+              <p className="text-4xl font-bold mt-1">{formatCurrency(correctedShare)}</p>
             </div>
             <CardContent className="p-4 space-y-3">
               <div className="flex justify-between text-sm">
@@ -189,22 +220,22 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Solo fare would be</span>
-                <span className="font-semibold text-slate-400 line-through">{formatCurrency(soloFare)}</span>
+                <span className="font-semibold text-slate-400 line-through">{formatCurrency(correctedSoloFare)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">You saved</span>
-                <span className="font-bold text-green-600">{formatCurrency(savingsAmount)}</span>
+                <span className="font-bold text-green-600">{correctedSavings > 0 ? formatCurrency(correctedSavings) : '₹0.00'}</span>
               </div>
             </CardContent>
           </Card>
         </motion.div>
 
         {/* Savings Badge */}
-        {savingsPct > 0 && (
+        {correctedSavingsPct > 0 && (
           <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.6 }}
             className="bg-green-50 border border-green-200 rounded-xl p-3 text-center"
           >
-            <span className="text-green-700 font-bold text-lg">{savingsPct.toFixed(0)}% cheaper than solo!</span>
+            <span className="text-green-700 font-bold text-lg">{correctedSavingsPct.toFixed(0)}% cheaper than solo!</span>
           </motion.div>
         )}
 
@@ -301,6 +332,42 @@ export default function FareSummaryPage({ params }: { params: Promise<{ groupId:
           </Button>
         </motion.div>
       </div>
+
+      {/* Rating Modal */}
+      <Dialog open={showRatingModal} onOpenChange={setShowRatingModal}>
+        <DialogContent className="max-w-xs rounded-2xl p-6 text-center">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">How was your ride?</DialogTitle>
+            <DialogDescription>
+              Rate your experience with {driverName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center gap-2 py-4">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => handleRating(star)}
+                className="transition-all hover:scale-110 active:scale-95"
+              >
+                <Star
+                  className={`w-10 h-10 ${
+                    star <= rating
+                      ? 'text-amber-400 fill-amber-400'
+                      : 'text-slate-300'
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
+          <Button 
+            variant="ghost" 
+            className="w-full text-slate-400 font-medium"
+            onClick={() => setShowRatingModal(false)}
+          >
+            Skip for now
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

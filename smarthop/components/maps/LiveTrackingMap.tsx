@@ -15,43 +15,6 @@ interface LiveTrackingMapProps {
   currentStopIndex: number
 }
 
-// Subcomponent to animate driver marker
-function DriverMarker({ lat, lng }: { lat: number; lng: number }) {
-  const map = useMap()
-  const prevRef = useRef({ lat, lng })
-
-  useEffect(() => {
-    if (lat !== prevRef.current.lat || lng !== prevRef.current.lng) {
-      map.flyTo([lat, lng], map.getZoom(), { duration: 1 })
-      prevRef.current = { lat, lng }
-    }
-  }, [lat, lng, map])
-
-  const driverIcon = L.divIcon({
-    html: `
-      <div style="position:relative;display:flex;align-items:center;justify-content:center;">
-        <div style="position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(59,130,246,0.2);animation:driverPulse 2s ease-in-out infinite;"></div>
-        <div style="width:32px;height:32px;background:#1e40af;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);">🚗</div>
-      </div>
-    `,
-    className: '',
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-  })
-
-  return (
-    <div>
-      <style>{`
-        @keyframes driverPulse {
-          0%, 100% { transform: scale(1); opacity: 0.6; }
-          50% { transform: scale(1.8); opacity: 0; }
-        }
-      `}</style>
-      {L.marker([lat, lng], { icon: driverIcon }).addTo(map) && null}
-    </div>
-  )
-}
-
 function DriverLayer({ lat, lng }: { lat: number; lng: number }) {
   const map = useMap()
   const markerRef = useRef<L.Marker | null>(null)
@@ -76,8 +39,6 @@ function DriverLayer({ lat, lng }: { lat: number; lng: number }) {
       markerRef.current.bindPopup('Driver')
     }
 
-    map.flyTo([lat, lng], map.getZoom(), { duration: 1 })
-
     return () => {
       if (markerRef.current) {
         map.removeLayer(markerRef.current)
@@ -94,18 +55,17 @@ function WaypointMarkers({ waypoints, currentStopIndex }: { waypoints: Waypoint[
   const markersRef = useRef<L.Marker[]>([])
 
   useEffect(() => {
-    // Clear old markers
     markersRef.current.forEach(m => map.removeLayer(m))
     markersRef.current = []
 
     waypoints.forEach((wp, i) => {
-      let bg = '#94a3b8' // gray — upcoming
+      let bg = '#94a3b8'
       let content = `${i + 1}`
       if (i < currentStopIndex) {
-        bg = '#22c55e' // green — completed
+        bg = '#22c55e'
         content = '✓'
       } else if (i === currentStopIndex) {
-        bg = '#3b82f6' // blue — current
+        bg = '#3b82f6'
       }
 
       const icon = L.divIcon({
@@ -129,6 +89,22 @@ function WaypointMarkers({ waypoints, currentStopIndex }: { waypoints: Waypoint[
   return null
 }
 
+// Auto-fit bounds when data changes
+function FitBounds({ points }: { points: [number, number][] }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (points.length >= 2) {
+      const bounds = L.latLngBounds(points)
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 })
+    } else if (points.length === 1) {
+      map.setView(points[0], 14)
+    }
+  }, [points, map])
+
+  return null
+}
+
 export default function LiveTrackingMap({
   driverLat,
   driverLng,
@@ -143,7 +119,18 @@ export default function LiveTrackingMap({
       ? [riderLat, riderLng]
       : [19.076, 72.8777]
 
-  const polylinePositions: [number, number][] = waypoints.map(wp => [wp.lat, wp.lng])
+  // Build full route polyline: driver → waypoints
+  const routePoints: [number, number][] = []
+  if (driverLat && driverLng) {
+    routePoints.push([driverLat, driverLng])
+  }
+  waypoints.forEach(wp => routePoints.push([wp.lat, wp.lng]))
+
+  // All points for bounds fitting
+  const allPoints: [number, number][] = [...routePoints]
+  if (riderLat && riderLng) {
+    allPoints.push([riderLat, riderLng])
+  }
 
   return (
     <>
@@ -165,6 +152,9 @@ export default function LiveTrackingMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
+        {/* Auto-fit bounds */}
+        <FitBounds points={allPoints.length > 0 ? allPoints : [center]} />
+
         {/* Rider pin */}
         {riderLat && riderLng && (
           <CircleMarker
@@ -184,11 +174,19 @@ export default function LiveTrackingMap({
         {/* Waypoint markers */}
         <WaypointMarkers waypoints={waypoints} currentStopIndex={currentStopIndex} />
 
-        {/* Route polyline */}
-        {polylinePositions.length > 1 && (
+        {/* Route polyline: driver → all waypoints */}
+        {routePoints.length >= 2 && (
           <Polyline
-            positions={polylinePositions}
-            pathOptions={{ color: '#3b82f6', weight: 3, dashArray: '8 6', opacity: 0.7 }}
+            positions={routePoints}
+            pathOptions={{ color: '#3b82f6', weight: 4, dashArray: '8 6', opacity: 0.8 }}
+          />
+        )}
+
+        {/* Dashed line from rider to driver (if both exist) */}
+        {riderLat && riderLng && driverLat && driverLng && (
+          <Polyline
+            positions={[[riderLat, riderLng], [driverLat, driverLng]]}
+            pathOptions={{ color: '#10b981', weight: 2, dashArray: '4 8', opacity: 0.5 }}
           />
         )}
       </MapContainer>

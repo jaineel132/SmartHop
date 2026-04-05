@@ -47,3 +47,6 @@ wheels/
 .env*
 next-env.d.ts
 *.tsbuildinfo
+
+# Project specific
+steps/

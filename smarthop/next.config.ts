@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_DEV_SESSION_ID: Date.now().toString(),
+  },
   images: { 
     remotePatterns: [{ protocol:'https', hostname:'**' }] 
   },

@@ -53,26 +53,26 @@ export default function RiderDashboard() {
           setUserName(userData.full_name)
         }
 
-        // 2. Check active ride
+        // 2. Check active ride (include 'forming' so riders see the waiting screen)
         const { data: rideData } = await supabase
           .from('ride_members')
           .select('group_id, ride_groups!inner(status)')
           .eq('user_id', user.id)
-          .in('ride_groups.status', ['accepted', 'in_progress'])
+          .in('ride_groups.status', ['forming', 'accepted', 'in_progress'])
           .limit(1)
 
         if (rideData && rideData.length > 0) {
           setActiveRideGroup(rideData[0].group_id)
         }
 
-        // 3. Fetch recent rides
+        // 3. Fetch recent rides (use ride_groups.created_at since ride_members has no timestamp)
         const { data: recentData } = await supabase
           .from('ride_members')
-          .select('id, joined_at, ride_groups!inner(status)')
+          .select('id, fare_share, ride_groups!inner(status, created_at, distance_km)')
           .eq('user_id', user.id)
           .eq('ride_groups.status', 'completed')
-          .order('joined_at', { ascending: false })
-          .limit(3)
+          .order('ride_groups(created_at)', { ascending: false })
+          .limit(5)
 
         if (recentData) {
           setRecentRides(recentData)
@@ -200,21 +200,25 @@ export default function RiderDashboard() {
             </div>
           ) : recentRides.length > 0 ? (
             <div className="space-y-3">
-              {recentRides.map((ride, idx) => (
-                <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex justify-between items-center">
-                   <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {new Date(ride.joined_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                      <Car size={12}/> Shared Auto Ride
-                    </p>
+              {recentRides.map((ride: any, idx: number) => {
+                const rideGroup = ride.ride_groups
+                const createdAt = rideGroup?.created_at
+                return (
+                  <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex justify-between items-center">
+                     <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {createdAt ? new Date(createdAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'}) : 'Recent Ride'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                        <Car size={12}/> Shared Auto • ₹{ride.fare_share || '—'}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="bg-green-50 text-green-700 hover:bg-green-50">
+                      Completed
+                    </Badge>
                   </div>
-                  <Badge variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-100">
-                    Completed
-                  </Badge>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
              <div className="bg-white border rounded-xl p-8 text-center flex flex-col items-center">

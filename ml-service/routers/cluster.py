@@ -30,10 +30,13 @@ async def cluster_riders(request: Request, riders: List[RiderRequest]):
         features.append([r.pickup_lat, r.pickup_lng, r.drop_lat, r.drop_lng])
     
     X = np.array(features)
-    X_scaled = cluster_scaler.transform(X)
+    
+    # Use explicit DBSCAN for coordinates (eps=0.01 roughly 1km, min_samples=1)
+    from sklearn.cluster import DBSCAN
+    dbscan_model = DBSCAN(eps=0.01, min_samples=1)
     
     # Predict clusters
-    labels = dbscan.fit_predict(X_scaled)
+    labels = dbscan_model.fit_predict(X)
     
     # Group by labels
     clusters_data = {}
@@ -52,21 +55,29 @@ async def cluster_riders(request: Request, riders: List[RiderRequest]):
 
     # Format result
     result = []
+    
+    # Helper to chunk list
+    def chunk_list(lst, n):
+        for i in range(0, len(lst), n):
+            yield lst[i:i + n]
+
     for label, data in clusters_data.items():
-        # Label -1 is noise (solo)
-        cluster_id = f"solo_{data['rider_ids'][0]}" if label == -1 else f"cluster_{label}"
+        rider_chunks = list(chunk_list(data["rider_ids"], 3))
+        pickup_chunks = list(chunk_list(data["pickups"], 3))
         
-        # Calculate center
-        pickups = np.array(data["pickups"])
-        center_lat = float(np.mean(pickups[:, 0]))
-        center_lng = float(np.mean(pickups[:, 1]))
-        
-        result.append({
-            "cluster_id": cluster_id,
-            "rider_ids": data["rider_ids"],
-            "cluster_size": data["cluster_size"],
-            "center_lat": center_lat,
-            "center_lng": center_lng
-        })
-        
+        for i, r_chunk in enumerate(rider_chunks):
+            p_chunk = np.array(pickup_chunks[i])
+            cluster_id = f"solo_{r_chunk[0]}" if label == -1 else f"cluster_{label}_{i}"
+            
+            center_lat = float(np.mean(p_chunk[:, 0]))
+            center_lng = float(np.mean(p_chunk[:, 1]))
+            
+            result.append({
+                "cluster_id": cluster_id,
+                "rider_ids": r_chunk,
+                "cluster_size": len(r_chunk),
+                "center_lat": center_lat,
+                "center_lng": center_lng
+            })
+            
     return result

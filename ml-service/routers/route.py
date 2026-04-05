@@ -11,6 +11,7 @@ class Waypoint(BaseModel):
     label: str = ""
     user_id: str = ""
     address: str = ""
+    completed: bool = False
 
 class RouteRequest(BaseModel):
     waypoints: List[Waypoint]

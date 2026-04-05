@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, Outfit } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'sonner'
+import SessionGuard from '@/components/SessionGuard'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -26,7 +27,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${outfit.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
-        {children}
+        <SessionGuard>
+          {children}
+        </SessionGuard>
         <Toaster richColors position="top-center" />
       </body>
     </html>
