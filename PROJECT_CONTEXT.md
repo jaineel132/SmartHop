@@ -1,35 +1,61 @@
-# SmartHop — Shared Agent Context (PROJECT_CONTEXT.md)
+# SmartHop — Project Context
 
-## Stack
-- Frontend: Next.js 15 App Router + TypeScript + Tailwind v4 + shadcn/ui
-- Backend: Supabase (PostgreSQL + RLS + Realtime + Auth)
-- ML Service: FastAPI (Python 3.10, scikit-learn 1.4.2)
-- Maps: Leaflet / React-Leaflet with OSM tiles (NO Google Maps)
-- Deploy: Vercel (Next.js) + Render free tier (FastAPI)
+SmartHop is a last-mile shared ride platform designed for the Mumbai Metro ecosystem. It integrates real-time ride-sharing with fare splitting and automated coordination between metro stations and final destinations.
 
-## Critical Rules
-- Tailwind v4: NO tailwind.config.ts — all config in globals.css via @theme
-- All Leaflet map components: dynamic import with { ssr: false } (mandatory)
-- Supabase client: use @supabase/ssr createBrowserClient in "use client" files
-- All errors: Sonner toast — never show raw Error.message to user
-- TypeScript: run npx tsc --noEmit after every batch of files
+## Project Structure
 
-## Existing ML Models (do NOT retrain — just load from .joblib)
-cluster_scaler.joblib, dbscan_model.joblib, kmeans_model.joblib
-fare_lr_model.joblib, fare_rf_model.joblib, fare_shared_rf_model.joblib
-fare_scaler.joblib, driver_ranking_model.joblib, ranking_scaler.joblib
+- **`smarthop/`**: The frontend application built with Next.js.
+- **`ml-service/`**: A Python-based FastAPI service that handles machine learning tasks like fare calculation, ride clustering, and driver ranking.
+- **`steps/`**: Contains implementation guidelines and phase-wise development steps.
 
-## Navigation Architecture
-- /rider/* pages: SharedTopBar (sticky top) + MobileNav (fixed bottom, 4 tabs)
-- /driver/* pages: SharedTopBar driver variant + DriverNav (fixed bottom, 3 tabs)
-- /admin/* pages: AdminSidebar (desktop) + AdminTabBar (mobile top)
-- Sub-pages (ticket, tracking, fare-summary, route): BackArrowHeader
-- Public / : TopNav with Login + Sign Up links
-- /auth/* and /onboarding: no navigation component
+## Technology Stack
 
-## Agent Prefix (paste before every step prompt)
-You are building SmartHop — a Mumbai Metro last-mile shared ride platform.
-Read PROJECT_CONTEXT.md at the project root before writing any code.
-Follow the navigation architecture defined in PROJECT_CONTEXT.md exactly.
-Also implement the navigation additions specified for this step number.
-After generating files: run npx tsc --noEmit — zero errors required.
+- **Frontend**: 
+  - Next.js 15 (App Router)
+  - TypeScript
+  - Tailwind CSS v4 (Configuration via `globals.css`)
+  - Shadcn/ui & Framer Motion for UI/Animations
+  - Leaflet / React-Leaflet for mapping (OpenStreetMap)
+- **Backend/Database**: 
+  - Supabase (PostgreSQL, RLS, Realtime, Auth)
+- **ML Service**: 
+  - FastAPI (Python 3.10)
+  - Scikit-learn, Pandas, NumPy, Joblib
+
+## Commands to Run the Project
+
+To run the full project, you need to start both the frontend and the ML service.
+
+### 1. Run the Frontend (Next.js)
+```bash
+cd smarthop
+npm install
+npm run dev
+```
+The frontend will typically be available at `http://localhost:3000`.
+
+### 2. Run the ML Service (FastAPI)
+```bash
+cd ml-service
+python -m venv venv
+# On Windows:
+.\venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+The ML service will typically be available at `http://localhost:8000`.
+
+## Key Features & ML Models
+
+- **Ride Matching**: Uses DBSCAN and KMeans for clustering rides based on station and destination.
+- **Fare Prediction**: Dynamic fare estimation using Random Forest and Linear Regression models.
+- **Driver Ranking**: Automated ranking of drivers based on performance metrics.
+- **Navigation**: Custom interactive maps for Mumbai Metro stations and ride tracking.
+
+## Development Workflow
+
+- Always ensure the Supabase environment variables are set in `smarthop/.env.local`.
+- ML models are pre-trained and loaded from `.joblib` files; do not retrain unless explicitly required.
+- Maintain navigation consistency across Rider, Driver, and Admin dashboards as defined in the UI architecture.

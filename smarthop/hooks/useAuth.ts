@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
-import { User, Session } from '@supabase/supabase-js'
+import { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
 export function useAuth() {
@@ -60,11 +60,11 @@ export function useAuth() {
       }
     }
 
-    void supabase.auth.getSession().then(({ data }) => {
-      handleSession(data.session)
+    void supabase.auth.getSession().then((result: { data: { session: Session | null } }) => {
+      handleSession(result.data.session)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       handleSession(session)
 
       if (event === 'SIGNED_OUT' && isMounted) {

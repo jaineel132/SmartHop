@@ -73,19 +73,17 @@ export default function TrackingPage({ params }: { params: Promise<{ groupId: st
         .filter(Boolean)
 
       const updates: Promise<any>[] = [
-        Promise.resolve(supabase.from('ride_groups').update({ status: 'cancelled' }).eq('id', groupId)),
-        Promise.resolve(supabase.from('ride_members').update({ status: 'cancelled' }).eq('group_id', groupId)),
-        Promise.resolve(supabase.from('fare_transactions').update({ status: 'failed' }).eq('group_id', groupId)),
+        supabase.from('ride_groups').update({ status: 'cancelled' }).eq('id', groupId),
+        supabase.from('ride_members').update({ status: 'cancelled' }).eq('group_id', groupId),
+        supabase.from('fare_transactions').update({ status: 'failed' }).eq('group_id', groupId),
       ]
 
       if (requestIds.length > 0) {
         updates.push(
-          Promise.resolve(
-            supabase
-              .from('ride_requests')
-              .update({ status: 'expired' })
-              .in('id', requestIds)
-          )
+          supabase
+            .from('ride_requests')
+            .update({ status: 'expired' })
+            .in('id', requestIds)
         )
       }
 

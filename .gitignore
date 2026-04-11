@@ -30,6 +30,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!smarthop/lib/
+!smarthop/lib/**
 parts/
 sdist/
 var/

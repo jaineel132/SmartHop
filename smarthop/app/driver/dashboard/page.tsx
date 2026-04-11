@@ -67,7 +67,8 @@ export default function DriverDashboard() {
     try {
       const saved = localStorage.getItem('declined_rides')
       if (saved) {
-        const decoded = new Set<string>(JSON.parse(saved) as string[])
+        const parsed: unknown = JSON.parse(saved)
+        const decoded = new Set<string>(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [])
         setDeclinedRideIds(decoded)
         declinedRidesRef.current = decoded
         console.log('[Driver Dashboard] Loaded', decoded.size, 'declined rides from storage')
@@ -90,8 +91,8 @@ export default function DriverDashboard() {
   // Clear declined rides when driver goes offline
   useEffect(() => {
     if (!isOnline) {
-      setDeclinedRideIds(new Set())
-      declinedRidesRef.current = new Set()
+      setDeclinedRideIds(new Set<string>())
+      declinedRidesRef.current = new Set<string>()
       localStorage.removeItem('declined_rides')
       console.log('[Driver Dashboard] Cleared declined rides (driver offline)')
     }
@@ -202,7 +203,7 @@ export default function DriverDashboard() {
           table: 'ride_groups',
           filter: `driver_id=eq.${user.id}`
         },
-        (payload) => {
+        (payload: any) => {
           console.log('[Driver Dashboard] ride_groups UPDATE event:', payload)
           // Refetch stats when a ride status changes (e.g., to completed)
           fetchDriverData()
@@ -219,7 +220,7 @@ export default function DriverDashboard() {
           schema: 'public',
           table: 'fare_transactions'
         },
-        (payload) => {
+        (payload: any) => {
           console.log('[Driver Dashboard] fare_transactions INSERT event:', payload)
           // Refetch stats when new transaction is created
           fetchDriverData()
@@ -232,7 +233,7 @@ export default function DriverDashboard() {
           schema: 'public',
           table: 'fare_transactions'
         },
-        (payload) => {
+        (payload: any) => {
           console.log('[Driver Dashboard] fare_transactions UPDATE event:', payload)
           // Refetch stats when transactions are marked as paid
           if (payload.new?.status === 'paid') {
@@ -361,7 +362,7 @@ export default function DriverDashboard() {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         console.log('[Driver Dashboard] Realtime subscription status:', status)
         if (status === 'SUBSCRIBED') {
           console.log('[Driver Dashboard] ✓ Successfully subscribed to ride_groups changes')
